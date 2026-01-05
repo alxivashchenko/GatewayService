@@ -2,7 +2,6 @@ package com.alexivashchenko.gateway.service.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.slf4j.Logger;
@@ -24,7 +23,10 @@ import java.util.Map;
 
 @Component
 public class JwtGatewayFilter implements GlobalFilter, Ordered {
+
     private static final Logger log = LoggerFactory.getLogger(JwtGatewayFilter.class);
+
+    private static final String USER_ID_HEADER = "X-User-Id";
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -39,15 +41,17 @@ public class JwtGatewayFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String path = exchange.getRequest().getURI().getPath();
 
-        // Allow unauthenticated access to auth endpoints
-        if (path.startsWith("/api/v1/auth/") || path.equals("/api/v1/auth")) {
+        String path = exchange.getRequest().getPath().value();
+
+        // ---- Bypass auth endpoints ----
+        if (path.startsWith("/api/v1/auth")) {
             return chain.filter(exchange);
         }
 
-        ServerHttpRequest request = exchange.getRequest();
-        String header = request.getHeaders().getFirst(authHeader);
+        String header = exchange.getRequest()
+                .getHeaders()
+                .getFirst(authHeader);
 
         if (header == null || !header.startsWith(prefix)) {
             return unauthorized(exchange, "Missing or invalid Authorization header");
@@ -55,46 +59,42 @@ public class JwtGatewayFilter implements GlobalFilter, Ordered {
 
         String token = header.substring(prefix.length()).trim();
 
-        try {
-            // parse and validate token
-            Jws<Claims> jws = Jwts.parserBuilder()
-                    .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
-                    .build()
-                    .parseClaimsJws(token);
+        return Mono.fromCallable(() -> parseClaims(token))
+                .flatMap(claims -> {
+                    String userId = claims.getSubject();
 
-            Claims claims = jws.getBody();
+                    if (userId == null || userId.isBlank()) {
+                        return unauthorized(exchange, "Token does not contain subject");
+                    }
 
-            String userId = claims.getSubject(); //claims.get("sub", String.class);
-//            String userId = claims.get("userId", String.class);
-            String email = claims.get("email", String.class);
+                    ServerHttpRequest mutatedRequest = exchange.getRequest()
+                            .mutate()
+                            .headers(headers -> {
+                                headers.remove(USER_ID_HEADER); // prevent spoofing
+                                headers.add(USER_ID_HEADER, userId);
+                            })
+                            .build();
 
-            if (userId == null || userId.isEmpty()) {
-                return unauthorized(exchange, "Token does not contain userId claim");
-            }
+                    return chain.filter(
+                            exchange.mutate().request(mutatedRequest).build()
+                    );
+                })
+                .onErrorResume(ex -> {
+                    log.debug("JWT validation failed", ex);
+                    return unauthorized(exchange, "Invalid or expired token");
+                });
+    }
 
-//            ServerHttpRequest mutated = request.mutate()
-//                    .header("X-User-Id", userId)
-////                    .header("X-User-Email", email == null ? "" : email)
-//                    .build();
-
-            ServerHttpRequest mutated = exchange.getRequest()
-                    .mutate()
-                    .headers(headers -> {
-                        headers.remove("X-User-Id"); // prevent spoofing
-                        headers.add("X-User-Id", userId);
-                    })
-                    .build();
-
-            ServerWebExchange mutatedExchange = exchange.mutate().request(mutated).build();
-            return chain.filter(mutatedExchange);
-
-        } catch (Exception ex) {
-            log.warn("JWT validation failed: {}", ex.getMessage());
-            return unauthorized(exchange, "Invalid or expired token");
-        }
+    private Claims parseClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     private Mono<Void> unauthorized(ServerWebExchange exchange, String message) {
+
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
@@ -103,21 +103,22 @@ public class JwtGatewayFilter implements GlobalFilter, Ordered {
         body.put("status", HttpStatus.UNAUTHORIZED.value());
         body.put("error", HttpStatus.UNAUTHORIZED.getReasonPhrase());
         body.put("message", message);
-        body.put("path", exchange.getRequest().getURI().getPath());
+        body.put("path", exchange.getRequest().getPath().value());
 
         byte[] bytes;
         try {
             bytes = objectMapper.writeValueAsBytes(body);
         } catch (Exception e) {
-            bytes = ("{\"message\":\"" + message + "\"}").getBytes(StandardCharsets.UTF_8);
+            bytes = ("{\"message\":\"" + message + "\"}")
+                    .getBytes(StandardCharsets.UTF_8);
         }
 
-        return exchange.getResponse().writeWith(Mono.just(exchange.getResponse()
-                .bufferFactory()
-                .wrap(bytes)));
+        return exchange.getResponse().writeWith(
+                Mono.just(exchange.getResponse().bufferFactory().wrap(bytes))
+        );
     }
 
-    // Ensure this runs early
+    // ---- Run early in filter chain ----
     @Override
     public int getOrder() {
         return -100;
