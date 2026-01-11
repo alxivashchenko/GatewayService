@@ -21,25 +21,24 @@ spring:
             - Path=/api/v1/todos/**
           filters:
             - StripPrefix=0
-    globalcors:
-      corsConfigurations:
-        '[/**]':
-          allowedOrigins:
-            - http://localhost:5173
-          allowedMethods:
-            - GET
-            - POST
-            - PUT
-            - DELETE
-            - OPTIONS
-          allowedHeaders:
-            - Authorization
-            - Content-Type
-          allowCredentials: true
+#    globalcors:
+#      corsConfigurations:
+#        '[/**]':
+#          allowedOrigins:
+#            - http://localhost:5173
+#          allowedMethods:
+#            - GET
+#            - POST
+#            - PUT
+#            - DELETE
+#            - OPTIONS
+#          allowedHeaders:
+#            - "*"
+#          allowCredentials: true
 
     loadbalancer:
       retry:
-        enabled: false
+        enabled:  false
 
 jwt:
   secret: ${JWT_SECRET}
