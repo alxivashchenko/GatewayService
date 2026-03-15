@@ -21,6 +21,13 @@ spring:
             - Path=/api/v1/todos/**
           filters:
             - StripPrefix=0
+
+        - id: user-service
+          uri: ${USER_SERVICE_URL}
+          predicates:
+            - Path=/api/v1/users/**
+          filters:
+            - StripPrefix=0
 #    globalcors:
 #      corsConfigurations:
 #        '[/**]':
@@ -35,6 +42,7 @@ spring:
 #          allowedHeaders:
 #            - "*"
 #          allowCredentials: true
+
 
     loadbalancer:
       retry:
