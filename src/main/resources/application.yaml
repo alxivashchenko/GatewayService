@@ -60,5 +60,17 @@ app:
       - ${FRONTEND_URL}
       - ${FRONTEND_URL_SERVER}
 
+management:
+  tracing:
+    sampling:
+      probability: 1.0
 
+  otlp:
+    tracing:
+      endpoint: http://otel-collector:4317
+
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
 
