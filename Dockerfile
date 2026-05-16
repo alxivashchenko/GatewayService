@@ -15,8 +15,12 @@ WORKDIR /app
 # Copy jar from build stage
 COPY --from=build /build/gateway-service/target/*.jar app.jar
 
+# copy OpenTelemetry agent
+COPY otel/opentelemetry-javaagent.jar /otel/opentelemetry-javaagent.jar
+
 # Expose default Spring Boot port
 EXPOSE 8084
 
 # Run the application
-ENTRYPOINT ["java","-jar","app.jar"]
+#ENTRYPOINT ["java","-jar","app.jar"]
+ENTRYPOINT ["java","-javaagent:/otel/opentelemetry-javaagent.jar","-jar","app.jar"]
