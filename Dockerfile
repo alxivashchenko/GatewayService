@@ -23,4 +23,7 @@ EXPOSE 8084
 
 # Run the application
 #ENTRYPOINT ["java","-jar","app.jar"]
-ENTRYPOINT ["java","-javaagent:/otel/opentelemetry-javaagent.jar","-jar","app.jar"]
+#ENTRYPOINT ["java","-javaagent:/otel/opentelemetry-javaagent.jar","-jar","app.jar"]
+#ENTRYPOINT ["sh", "-c", "java $JAVA_TOOL_OPTIONS -jar app.jar"]
+ENTRYPOINT ["java"]
+CMD ["-jar", "app.jar"]
